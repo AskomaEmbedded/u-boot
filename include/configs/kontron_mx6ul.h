@@ -25,12 +25,8 @@
 /* Boot order for distro boot */
 #ifndef CONFIG_SPL_BUILD
 #define BOOT_TARGET_DEVICES(func) \
-	func(MMC, mmc, 1) \
 	func(MMC, mmc, 0) \
-	func(UBIFS, ubifs, 0) \
-	func(USB, usb, 0) \
-	func(PXE, pxe, na) \
-	func(DHCP, dhcp, na)
+	func(UBIFS, ubifs, 0)
 #include <config_distro_bootcmd.h>
 #else
 #define BOOTENV
