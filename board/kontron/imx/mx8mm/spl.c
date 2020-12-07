@@ -179,7 +179,7 @@ int do_board_detect(void)
 	 */
 	imx_iomux_v3_setup_multiple_pads(i2c1_pads, ARRAY_SIZE(i2c1_pads));
 
-	if (i2c_detect(2, 0x58) == 0) {
+	if (i2c_detect(0, 0x58) == 0) {
 		printf("### ATTENTION: DEPRECATED SOM REVISION (N8010 Rev0) DETECTED! ###\n");
 		printf("###  THIS HW IS NOT SUPPRTED AND BOOTING WILL PROBABLY FAIL   ###\n");
 		printf("###             PLEASE UPGRADE TO LATEST MODULE               ###\n");
