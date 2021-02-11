@@ -21,6 +21,8 @@
 
 #include <i2c.h>
 #include <linux/delay.h>
+#include <power/pca9450.h>
+#include <power/pmic.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -233,6 +235,32 @@ int board_early_init_f(void)
 	return 0;
 }
 
+int power_init_board(void)
+{
+	struct udevice *dev;
+	int ret  = pmic_get("pca9450@25", &dev);
+
+	if (ret == -ENODEV)
+		puts("No pmic found\n");
+
+	if (ret)
+		return ret;
+
+	/* BUCKxOUT_DVS0/1 control BUCK123 output, clear PRESET_EN */
+	pmic_reg_write(dev, PCA9450_BUCK123_DVS, 0x29);
+
+	/* increase VDD_DRAM to 0.95V for 1.5GHz DDR */
+	pmic_reg_write(dev, PCA9450_BUCK3OUT_DVS0, 0x1c);
+
+	/* set VDD_SNVS_0V8 from default 0.85V to 0.8V */
+	pmic_reg_write(dev, PCA9450_LDO2CTRL, 0xC0);
+
+	/* set WDOG_B_CFG to cold reset */
+	pmic_reg_write(dev, PCA9450_RESET_CTRL, 0xA1);
+
+	return 0;
+}
+
 void board_init_f(ulong dummy)
 {
 	int ret;
@@ -257,6 +285,9 @@ void board_init_f(ulong dummy)
 	}
 
 	enable_tzc380();
+
+	/* PMIC initialization */
+	power_init_board();
 
 	/* DDR initialization */
 	spl_dram_init();
