@@ -37,6 +37,7 @@
 };
 
 &i2c2 {
+	status = "okay";
 	u-boot,dm-spl;
 	u-boot,dm-pre-reloc;
 };
