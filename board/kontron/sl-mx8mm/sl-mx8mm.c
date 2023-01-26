@@ -15,6 +15,7 @@
 #include <linux/errno.h>
 #include <linux/kernel.h>
 #include <net.h>
+#include <asm/arch/sys_proto.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -55,64 +56,8 @@ int board_phys_sdram_size(phys_size_t *size)
 	return 0;
 }
 
-/*
- * If the SoM is mounted on a baseboard with a USB ethernet controller,
- * there might be an additional MAC address programmed to the MAC OTP fuses.
- * Although the i.MX8MM has only one MAC, the MAC0, MAC1 and MAC2 registers
- * in the OTP fuses can still be used to store two separate addresses.
- * Try to read the secondary address from MAC1 and MAC2 and adjust the
- * devicetree so Linux can pick up the MAC address.
- */
-int fdt_set_usb_eth_addr(void *blob)
-{
-	u32 value = readl(OCOTP_BASE_ADDR + 0x660);
-	unsigned char mac[6];
-	int node, ret;
-
-	mac[0] = value >> 24;
-	mac[1] = value >> 16;
-	mac[2] = value >> 8;
-	mac[3] = value;
-
-	value = readl(OCOTP_BASE_ADDR + 0x650);
-	mac[4] = value >> 24;
-	mac[5] = value >> 16;
-
-	node = fdt_path_offset(blob, fdt_get_alias(blob, "ethernet1"));
-	if (node < 0) {
-		/*
-		 * There is no node for the USB ethernet in the devicetree. Just skip.
-		 */
-		return 0;
-	}
-
-	if (is_zero_ethaddr(mac)) {
-		printf("\nNo MAC address for USB ethernet set in OTP fuses!\n");
-		return 0;
-	}
-
-	if (!is_valid_ethaddr(mac)) {
-		printf("\nInvalid MAC address for USB ethernet set in OTP fuses!\n");
-		return -EINVAL;
-	}
-
-	ret = fdt_setprop(blob, node, "local-mac-address", &mac, 6);
-	if (ret)
-		ret = fdt_setprop(blob, node, "mac-address", &mac, 6);
-
-	if (ret)
-		printf("\nMissing mac-address or local-mac-address property in dt, skip setting MAC address for USB ethernet\n");
-
-	return 0;
-}
-
 int ft_board_setup(void *blob, struct bd_info *bd)
 {
-	int ret = fdt_set_usb_eth_addr(blob);
-
-	if (ret)
-		return ret;
-
 	return fdt_fixup_memory(blob, PHYS_SDRAM, gd->ram_size);
 }
 
@@ -121,8 +66,20 @@ int board_init(void)
 	return 0;
 }
 
+static int get_mac_from_fuse(unsigned char *enetaddr)
+{
+	imx_get_mac_from_fuse(0, enetaddr);
+	if (!is_valid_ethaddr(enetaddr))
+		return -EINVAL;
+
+	return 0;
+}
+
 int board_late_init(void)
 {
+	unsigned char enetaddr[6];
+	int ret;
+
 	if (!fdt_node_check_compatible(gd->fdt_blob, 0, "kontron,imx8mm-n802x-som") ||
 	    !fdt_node_check_compatible(gd->fdt_blob, 0, "kontron,imx8mm-osm-s")) {
 		env_set("som_type", "osm-s");
@@ -131,6 +88,18 @@ int board_late_init(void)
 		env_set("som_type", "sl");
 		env_set("touch_rst_gpio", "87");
 	}
+
+	ret = get_mac_from_fuse(enetaddr);
+	if (ret < 0) {
+		printf("Cannot read eth0 MAC address\n");
+		return 0;
+	}
+
+	/* eth1 MAC address is eth0 MAC address + 1 */
+	enetaddr[5]++;
+
+	if (!env_get("eth1addr"))
+		eth_env_set_enetaddr("eth1addr", enetaddr);
 
 	return 0;
 }
