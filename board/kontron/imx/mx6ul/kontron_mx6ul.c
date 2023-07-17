@@ -59,12 +59,49 @@ static int setup_fec(void)
 	return 0;
 }
 
+static int find_ethernet_phy(void)
+{
+	struct phy_device *phydev;
+	struct mii_dev *bus;
+	int phy_addr;
+
+	bus = fec_get_miibus(ENET2_BASE_ADDR, -1);
+	if (!bus)
+		return -ENOENT;
+
+	/* Scan Network PHY addresses 2 and 7 */
+	phydev = phy_find_by_mask(bus, 0x84, PHY_INTERFACE_MODE_RMII);
+	if (!phydev) {
+		free(bus);
+		return -ENOENT;
+	}
+
+	phy_addr = phydev->addr;
+	free(phydev);
+
+	return phy_addr;
+}
+
 int board_phy_config(struct phy_device *phydev)
 {
+	int phy;
+
 	phy_write(phydev, MDIO_DEVAD_NONE, 0x1f, 0x8190);
 
 	if (phydev->drv->config)
 		phydev->drv->config(phydev);
+
+	phy = find_ethernet_phy();
+	switch (phy) {
+	case 2:
+		env_set("board_rev", "1.2");
+		printf("Board revision detected: EM 1.2\n");
+		break;
+	case 7:
+		env_set("board_rev", "1.3");
+		printf("Board revision detected: EM 1.3\n");
+		break;
+	}
 
 	return 0;
 }
