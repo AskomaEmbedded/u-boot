@@ -31,12 +31,31 @@
 	u-boot,dm-spl;
 };
 
+&i2c1 {
+	u-boot,dm-spl;
+	u-boot,dm-pre-reloc;
+};
+
+&i2c2 {
+	status = "okay";
+	u-boot,dm-spl;
+	u-boot,dm-pre-reloc;
+};
+
 &iomuxc {
 	u-boot,dm-spl;
 	u-boot,dm-pre-reloc;
 };
 
 &pinctrl_ecspi1 {
+	u-boot,dm-spl;
+};
+
+&pinctrl_i2c1 {
+	u-boot,dm-spl;
+};
+
+&pinctrl_pmic {
 	u-boot,dm-spl;
 };
 
@@ -58,6 +77,14 @@
 };
 
 &pinctrl_usdhc2 {
+	u-boot,dm-spl;
+};
+
+&pmic {
+	u-boot,dm-spl;
+};
+
+&{/soc@0/bus@30800000/i2c@30a20000/pca9450@25/regulators} {
 	u-boot,dm-spl;
 };
 
@@ -83,18 +110,6 @@
 
 &gpio5 {
 	u-boot,dm-spl;
-};
-
-&i2c1 {
-	status = "okay";
-	u-boot,dm-spl;
-	u-boot,dm-pre-reloc;
-};
-
-&i2c2 {
-	status = "okay";
-	u-boot,dm-spl;
-	u-boot,dm-pre-reloc;
 };
 
 &uart3 {

@@ -21,15 +21,14 @@
 
 #include <i2c.h>
 #include <linux/delay.h>
+#include <power/pca9450.h>
+#include <power/pmic.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 
 enum {
-	BOARD_TYPE_KTN_N800X = 1,
-	BOARD_TYPE_KTN_N8010_REV0,
-	BOARD_TYPE_KTN_N8010_REV0_LVDS,
-	BOARD_TYPE_KTN_N8010,
-	BOARD_TYPE_KTN_N8010_LVDS,
+	BOARD_TYPE_KTN_N801X,
+	BOARD_TYPE_KTN_N801X_LVDS,
 	BOARD_TYPE_MAX
 };
 
@@ -81,38 +80,51 @@ int spl_board_boot_device(enum boot_device boot_dev_spl)
 	}
 }
 
+bool check_ram_available(long int size)
+{
+	long int sz = get_ram_size((long int *)PHYS_SDRAM, size);
+
+	if (sz == size)
+		return true;
+
+	return false;
+}
+
 void spl_dram_init(void)
 {
+	gd->ram_size = 0;
+
 	/*
-	 * Try to init DDR with default config (SMARC)
+	 * Try the default DDR settings in lpddr4_timing.c to
+	 * comply with the Micron 4GB DDR.
 	 */
-	if (!ddr_init(&dram_timing)) {
-		gd->ram_size = SZ_2G;
+	if (!ddr_init(&dram_timing) && check_ram_available(SZ_4G)) {
+		gd->ram_size = SZ_4G;
 		return;
 	}
 
 	/*
-	 * Overwrite some config values in the default DDR
-	 * settings in lpddr4_timing.c to comply with the
-	 * RAM on the SoM. Retry init with these values.
+	 * Overwrite some values to comply with the Micron 1GB/2GB DDRs.
 	 */
 	dram_timing.ddrc_cfg[2].val = 0xa1080020;
 	dram_timing.ddrc_cfg[37].val = 0x1f;
-	dram_timing.fsp_msg[0].fsp_cfg[9].val = 0x110;
-	dram_timing.fsp_msg[0].fsp_cfg[21].val = 0x1;
-	dram_timing.fsp_msg[1].fsp_cfg[10].val = 0x110;
-	dram_timing.fsp_msg[1].fsp_cfg[22].val = 0x1;
+
+	dram_timing.fsp_msg[0].fsp_cfg[8].val = 0x110;
+	dram_timing.fsp_msg[0].fsp_cfg[20].val = 0x1;
+	dram_timing.fsp_msg[1].fsp_cfg[9].val = 0x110;
+	dram_timing.fsp_msg[1].fsp_cfg[21].val = 0x1;
 	dram_timing.fsp_msg[2].fsp_cfg[10].val = 0x110;
 	dram_timing.fsp_msg[2].fsp_cfg[22].val = 0x1;
-	dram_timing.fsp_msg[3].fsp_cfg[10].val = 0x110;
-	dram_timing.fsp_msg[3].fsp_cfg[22].val = 0x1;
 
 	if (!ddr_init(&dram_timing)) {
-		gd->ram_size = SZ_1G;
-		return;
+		if (check_ram_available(SZ_2G))
+			gd->ram_size = SZ_2G;
+		else if (check_ram_available(SZ_1G))
+			gd->ram_size = SZ_1G;
 	}
 
-	printf("Failed to initialize DDR RAM!\n");
+	if (gd->ram_size == 0)
+		printf("Failed to initialize DDR RAM!\n");
 }
 
 static void touch_reset(void)
@@ -147,69 +159,48 @@ static int i2c_detect(uint8_t bus, uint16_t addr)
 
 int do_board_detect(void)
 {
+	bool lvds = false;
+	printf("Kontron SL i.MX8MM (N801X) module, %d GB RAM detected\n", gd->ram_size / SZ_1G);
+
 	/*
-	 * We can use the RAM size detected by the SPL to differentiate
-	 * between the different modules.
+	 * Check the I2C touch controller to detect a LVDS panel.
 	 */
-	if (gd->ram_size == SZ_1G) {
-		bool lvds = false;
-		printf("1GB RAM detected, assuming Kontron N8010 module...\n");
+	imx_iomux_v3_setup_multiple_pads(i2c2_pads, ARRAY_SIZE(i2c2_pads));
+	touch_reset();
 
-		/*
-		 * Check the I2C touch controller to detect a LVDS panel.
-		 */
-		imx_iomux_v3_setup_multiple_pads(i2c2_pads, ARRAY_SIZE(i2c2_pads));
-		touch_reset();
-
-		if (i2c_detect(3, 0x5d) == 0) {
-			printf("Touch controller detected, "
-			       "assuming LVDS panel...\n");
-			lvds = true;
-		}
-
-		/*
-		 * Check the I2C PMIC to detect the deprecated SoM with DA9063.
-		 */
-		imx_iomux_v3_setup_multiple_pads(i2c1_pads, ARRAY_SIZE(i2c1_pads));
-
-		if (i2c_detect(2, 0x58) == 0) {
-			printf("### ATTENTION: DEPRECATED SOM REVISION (N8010 Rev0) DETECTED! ###\n");
-			printf("###             PLEASE UPGRADE TO LATEST MODULE               ###\n");
-			if (lvds)
-				gd->board_type = BOARD_TYPE_KTN_N8010_REV0_LVDS;
-			else
-				gd->board_type = BOARD_TYPE_KTN_N8010_REV0;
-		} else {
-			if (lvds)
-				gd->board_type = BOARD_TYPE_KTN_N8010_LVDS;
-			else
-				gd->board_type = BOARD_TYPE_KTN_N8010;
-		}
+	if (i2c_detect(1, 0x5d) == 0) {
+		printf("Touch controller detected, "
+			   "assuming LVDS panel...\n");
+		lvds = true;
 	}
-	else {
-		printf("Unkown board detected, using default...\n");
-		gd->board_type = BOARD_TYPE_KTN_N8010;
+
+	/*
+	 * Check the I2C PMIC to detect the deprecated SoM with DA9063.
+	 */
+	imx_iomux_v3_setup_multiple_pads(i2c1_pads, ARRAY_SIZE(i2c1_pads));
+
+	if (i2c_detect(0, 0x58) == 0) {
+		printf("### ATTENTION: DEPRECATED SOM REVISION (N8010 Rev0) DETECTED! ###\n");
+		printf("###  THIS HW IS NOT SUPPRTED AND BOOTING WILL PROBABLY FAIL   ###\n");
+		printf("###             PLEASE UPGRADE TO LATEST MODULE               ###\n");
 	}
+
+	if (lvds)
+		gd->board_type = BOARD_TYPE_KTN_N801X_LVDS;
+	else
+		gd->board_type = BOARD_TYPE_KTN_N801X;
 
 	return 0;
 }
 
 int board_fit_config_name_match(const char *name)
 {
-	if (gd->board_type == BOARD_TYPE_KTN_N8010_REV0_LVDS && is_imx8mm() &&
-	    !strncmp(name, "imx8mm-kontron-n8010-rev0-s-lvds", 32))
+	if (gd->board_type == BOARD_TYPE_KTN_N801X_LVDS && is_imx8mm() &&
+	    !strncmp(name, "imx8mm-kontron-n801x-s-lvds", 27))
 		return 0;
 
-	if (gd->board_type == BOARD_TYPE_KTN_N8010_REV0 && is_imx8mm() &&
-	    !strncmp(name, "imx8mm-kontron-n8010-rev0-s", 27))
-		return 0;
-
-	if (gd->board_type == BOARD_TYPE_KTN_N8010_LVDS && is_imx8mm() &&
-	    !strncmp(name, "imx8mm-kontron-n8010-s-lvds", 27))
-		return 0;
-
-	if (gd->board_type == BOARD_TYPE_KTN_N8010 && is_imx8mm() &&
-	    !strncmp(name, "imx8mm-kontron-n8010-s", 22))
+	if (gd->board_type == BOARD_TYPE_KTN_N801X && is_imx8mm() &&
+	    !strncmp(name, "imx8mm-kontron-n801x-s", 22))
 		return 0;
 
 	return -1;
@@ -242,6 +233,32 @@ int board_early_init_f(void)
 	return 0;
 }
 
+int power_init_board(void)
+{
+	struct udevice *dev;
+	int ret  = pmic_get("pca9450@25", &dev);
+
+	if (ret == -ENODEV)
+		puts("No pmic found\n");
+
+	if (ret)
+		return ret;
+
+	/* BUCKxOUT_DVS0/1 control BUCK123 output, clear PRESET_EN */
+	pmic_reg_write(dev, PCA9450_BUCK123_DVS, 0x29);
+
+	/* increase VDD_DRAM to 0.95V for 1.5GHz DDR */
+	pmic_reg_write(dev, PCA9450_BUCK3OUT_DVS0, 0x1c);
+
+	/* set VDD_SNVS_0V8 from default 0.85V to 0.8V */
+	pmic_reg_write(dev, PCA9450_LDO2CTRL, 0xC0);
+
+	/* set WDOG_B_CFG to cold reset */
+	pmic_reg_write(dev, PCA9450_RESET_CTRL, 0xA1);
+
+	return 0;
+}
+
 void board_init_f(ulong dummy)
 {
 	int ret;
@@ -267,6 +284,9 @@ void board_init_f(ulong dummy)
 
 	enable_tzc380();
 
+	/* PMIC initialization */
+	power_init_board();
+
 	/* DDR initialization */
 	spl_dram_init();
 
@@ -283,4 +303,26 @@ int do_reset(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
 	reset_cpu(WDOG1_BASE_ADDR);
 
 	return 0;
+}
+
+void board_boot_order(u32 *spl_boot_list)
+{
+	u32 bootdev = spl_boot_device();
+
+	/*
+	 * The default boot fuse settings use the SD card (MMC2) as primary
+	 * boot device, but allow SPI NOR as a fallback boot device.
+	 * We can't detect the fallback case and spl_boot_device() will return
+	 * BOOT_DEVICE_MMC2 despite the actual boot device beeing SPI NOR.
+	 * Therefore we try to load U-Boot proper vom SPI NOR after loading
+	 * from MMC has failed.
+	 */
+	spl_boot_list[0] = bootdev;
+
+	switch (bootdev) {
+	case BOOT_DEVICE_MMC1:
+	case BOOT_DEVICE_MMC2:
+		spl_boot_list[1] = BOOT_DEVICE_SPI;
+		break;
+	}
 }

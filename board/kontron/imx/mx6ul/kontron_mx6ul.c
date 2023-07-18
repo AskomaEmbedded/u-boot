@@ -29,6 +29,52 @@ int dram_init(void)
 	return 0;
 }
 
+
+/*
+ * Read second MAC address set in OTP fuses and pass it to kernel via devicetree.
+ * U-boot does only initialize one FEC so we have to read the second MAC adress
+ * manually.
+ */
+int fdt_fixup_second_ethaddr(void *blob)
+{
+	u32 value = readl(OCOTP_BASE_ADDR + 0x640);
+	unsigned char mac[6];
+	int node, ret;
+
+	mac[0] = value >> 24;
+	mac[1] = value >> 16;
+	mac[2] = value >> 8;
+	mac[3] = value;
+
+	value = readl(OCOTP_BASE_ADDR + 0x630);
+	mac[4] = value >> 24;
+	mac[5] = value >> 16;
+
+	if (!is_valid_ethaddr(mac)) {
+		printf("Invalid MAC address for FEC2"
+		       "set in OTP fuses!\n");
+		return -EINVAL;
+	}
+
+	node = fdt_path_offset(blob, fdt_get_alias(blob, "ethernet1"));
+	if (node < 0) {
+		printf("Did not find ethernet1 node in dt, "
+		       "skip setting MAC address for FEC2\n");
+		return 0;
+	}
+
+	ret = fdt_setprop(blob, node, "local-mac-address", &mac, 6);
+	if (ret)
+		ret = fdt_setprop(blob, node, "mac-address", &mac, 6);
+
+	if (ret) {
+		printf("Missing mac-address or local-mac-addresss property in dt, "
+		       "skip setting MAC address for FEC2\n");
+	}
+
+	return 0;
+}
+
 static int setup_fec(void)
 {
 	struct iomuxc *const iomuxc_regs = (struct iomuxc *)IOMUXC_BASE_ADDR;
@@ -112,6 +158,13 @@ int board_early_init_f(void)
 
 	return 0;
 }
+
+
+int ft_board_setup(void *blob, bd_t *bd)
+{
+	return fdt_fixup_second_ethaddr(blob);
+}
+
 
 int board_init(void)
 {

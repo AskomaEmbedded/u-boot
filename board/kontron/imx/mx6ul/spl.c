@@ -299,26 +299,19 @@ int do_board_detect(void)
 	 * We can use the RAM size detected by the SPL to differentiate
 	 * between the N6x10 (256MB) and the N6x11 (512MB) boards.
 	 */
-	if (gd->ram_size == SZ_512M && is_mx6ul()) {
-		printf("512MB RAM detected, assuming Kontron N6311 S board...\n");
+	if (gd->ram_size == SZ_512M && is_mx6ul())
 		gd->board_type = BOARD_TYPE_KTN_N6311_S;
-	}
-	else if (gd->ram_size == SZ_512M && is_mx6ull()) {
-		printf("512MB RAM detected, assuming Kontron N6411 S board...\n");
+	else if (gd->ram_size == SZ_512M && is_mx6ull())
 		gd->board_type = BOARD_TYPE_KTN_N6411_S;
-	}
-	else if (gd->ram_size == SZ_256M && is_mx6ul()) {
-		printf("256MB RAM detected, assuming Kontron N6310 S board...\n");
+	else if (gd->ram_size == SZ_256M && is_mx6ul())
 		gd->board_type = BOARD_TYPE_KTN_N6310_S;
-	}
-	else if (is_mx6ul()) {
-		printf("Unknown i.MX6UL board detected, using default...\n");
+	else if (is_mx6ul())
 		gd->board_type = BOARD_TYPE_KTN_N631X;
-	}
-	else if (is_mx6ull()) {
-		printf("Unknown i.MX6ULL board detected, using default...\n");
+	else if (is_mx6ull())
 		gd->board_type = BOARD_TYPE_KTN_N641X;
-	}
+
+	printf("Kontron SL i.MX6UL%s (N6%s1x) module, %d MB RAM detected\n",
+	       is_mx6ull() ? "L" : "", is_mx6ull() ? "4" : "3", gd->ram_size / SZ_1M);
 
 	return 0;
 }
@@ -361,17 +354,15 @@ void board_boot_order(u32 *spl_boot_list)
 	 * boot device, but allow SPI NOR as a fallback boot device.
 	 * We can't detect the fallback case and spl_boot_device() will return
 	 * BOOT_DEVICE_MMC1 despite the actual boot device beeing SPI NOR.
-	 * Therefore we provide a custom boot order to probe the SPI NOR first.
+	 * Therefore we try to load U-Boot proper vom SPI NOR after loading
+	 * from MMC has failed.
 	 */
+	spl_boot_list[0] = bootdev;
 
 	switch (bootdev) {
 	case BOOT_DEVICE_MMC1:
 	case BOOT_DEVICE_MMC2:
-		spl_boot_list[0] = BOOT_DEVICE_SPI;
-		spl_boot_list[1] = bootdev;
-		break;
-	default:
-		spl_boot_list[0] = bootdev;
+		spl_boot_list[1] = BOOT_DEVICE_SPI;
 		break;
 	}
 }

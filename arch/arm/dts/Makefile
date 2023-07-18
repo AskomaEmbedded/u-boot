@@ -675,10 +675,8 @@ dtb-$(CONFIG_ARCH_IMX8) += \
 
 dtb-$(CONFIG_ARCH_IMX8M) += \
 	imx8mm-evk.dtb \
-	imx8mm-kontron-n8010-rev0-s.dtb \
-	imx8mm-kontron-n8010-rev0-s-lvds.dtb \
-	imx8mm-kontron-n8010-s.dtb \
-	imx8mm-kontron-n8010-s-lvds.dtb \
+	imx8mm-kontron-n801x-s.dtb \
+	imx8mm-kontron-n801x-s-lvds.dtb \
 	imx8mn-ddr4-evk.dtb \
 	imx8mq-evk.dtb
 
